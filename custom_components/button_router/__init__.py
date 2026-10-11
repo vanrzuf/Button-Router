@@ -14,6 +14,15 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 try:
+    from homeassistant.components.frontend import (
+        async_register_built_in_panel,
+        async_remove_panel,
+    )
+except ImportError:  # pragma: no cover - defensywnie (frontend w dependencies)
+    async_register_built_in_panel = None  # type: ignore[assignment]
+    async_remove_panel = None  # type: ignore[assignment]
+
+try:
     from homeassistant.components.http import StaticPathConfig
 except ImportError:  # pragma: no cover - Home Assistant < 2024.3
     StaticPathConfig = None  # type: ignore[assignment]
@@ -95,7 +104,15 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
     if hass.data.get(f"{DOMAIN}_panel_registered"):
         return
 
-    hass.frontend.async_register_built_in_panel(
+    if async_register_built_in_panel is None:  # pragma: no cover
+        _LOGGER.error(
+            "Komponent frontend nie jest dostępny - panel boczny nie zostanie "
+            "zarejestrowany (dodaj 'frontend' do dependencies w manifest.json)"
+        )
+        return
+
+    async_register_built_in_panel(
+        hass,
         component_name="custom",
         frontend_url_path=PANEL_URL_PATH,
         sidebar_title=PANEL_SIDEBAR_TITLE,
@@ -105,7 +122,6 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
             "_panel_custom": {
                 "name": "button-router-panel",
                 "js_url": PANEL_JS_URL,
-                "html_url": PANEL_JS_URL,
                 "embed_iframe": False,
                 "trust_external": False,
             }
@@ -126,9 +142,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if runtime:
         runtime["router"].async_shutdown()
 
-    remove_panel = getattr(hass.frontend, "async_remove_built_in_panel", None)
-    if remove_panel:
-        remove_panel(PANEL_URL_PATH)
+    if async_remove_panel is not None:  # pragma: no branch
+        try:
+            async_remove_panel(hass, PANEL_URL_PATH)
+        except (KeyError, RuntimeError):  # pragma: no cover - panel nie był zarejestrowany
+            pass
     hass.data[f"{DOMAIN}_panel_registered"] = False
     _LOGGER.info("Button Router wyładowany")
     return True
