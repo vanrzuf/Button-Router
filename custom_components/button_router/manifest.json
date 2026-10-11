@@ -1,14 +1,22 @@
 {
   "domain": "button_router",
   "name": "Button Router",
-  "after_dependencies": ["esphome"],
-  "codeowners": ["@vanrzuf"],
+  "after_dependencies": [
+    "esphome"
+  ],
+  "codeowners": [
+    "@vanrzuf"
+  ],
   "config_flow": true,
-  "dependencies": ["http", "frontend", "websocket_api"],
+  "dependencies": [
+    "http",
+    "frontend",
+    "websocket_api"
+  ],
   "documentation": "https://github.com/vanrzuf/Button-Router",
   "integration_type": "hub",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/vanrzuf/Button-Router/issues",
   "requirements": [],
-  "version": "0.1.3"
+  "version": "0.1.4"
 }

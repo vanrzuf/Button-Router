@@ -75,9 +75,14 @@ textarea { width: 100%; font-family: var(--code-font-family, monospace); font-si
 class ButtonRouterPanel extends HTMLElement {
   constructor() {
     super();
+    // UWAGA: ŻADNYCH operacji DOM w konstruktorze! HA frontend używa
+    // polyfill scoped-custom-element-registry, który tworzy wtedy martwy
+    // HTMLUnknownElement (Firefox: NotSupportedError, panel zostaje pusty).
+    // Cały DOM inicjalizujemy w connectedCallback.
     this._hass = null;
     this._ready = false;
     this._initStarted = false;
+    this._domReady = false;
     this._dirty = false;
     this._buttons = {};
     this._discovered = {};
@@ -90,22 +95,38 @@ class ButtonRouterPanel extends HTMLElement {
     this._pollTimer = null;
     this._pollInFlight = false;
     this._lastDiscJson = "";
-    this.innerHTML = `<style>${CSS}</style><div class="loading">Ładowanie panelu…</div>`;
     this._boundClick = (e) => this._onClick(e);
     this._boundChange = (e) => this._onChange(e);
     this._boundInput = (e) => this._onInput(e);
-    this.addEventListener("click", this._boundClick);
-    this.addEventListener("change", this._boundChange);
-    this.addEventListener("input", this._boundInput);
+  }
+
+  connectedCallback() {
+    // Pierwszy kontakt z DOM dopiero tutaj (element jest już w dokumencie).
+    if (!this._domReady) {
+      this._domReady = true;
+      this.innerHTML = `<style>${CSS}</style><div class="loading">Ładowanie panelu…</div>`;
+      this.addEventListener("click", this._boundClick);
+      this.addEventListener("change", this._boundChange);
+      this.addEventListener("input", this._boundInput);
+    }
+    if (this._hass && !this._initStarted) {
+      this._initStarted = true;
+      this._init();
+    } else if (this._ready) {
+      // powrót do panelu po odczłączeniu przez partial-panel-resolver
+      this._startPolling();
+    }
   }
 
   set hass(hass) {
     this._hass = hass;
-    if (!this._initStarted) {
+    if (this._ready) {
+      this._refreshEntities(false);
+      return;
+    }
+    if (this._domReady && !this._initStarted) {
       this._initStarted = true;
       this._init();
-    } else if (this._ready) {
-      this._refreshEntities(false);
     }
   }
 
