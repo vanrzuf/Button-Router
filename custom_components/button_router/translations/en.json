@@ -1,0 +1,32 @@
+{
+  "title": "Button Router",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Button Router",
+        "description": "Maps physical button events (e.g. ESPHome: esphome.short / esphome.double / esphome.long) to Home Assistant actions. After setup, a \"Buttons\" panel appears in the sidebar and new buttons are discovered automatically when pressed.",
+        "data": {
+          "name": "Name (shown in the integrations list)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This integration is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Button Router — settings",
+        "data": {
+          "event_types": "Event types to listen for",
+          "data_key": "Event data key holding the button name",
+          "extra_event_types": "Extra event types (comma separated, e.g. esphome.quad)"
+        }
+      }
+    },
+    "error": {
+      "no_event_types": "Select at least one event type."
+    }
+  }
+}

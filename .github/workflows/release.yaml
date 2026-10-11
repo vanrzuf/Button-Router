@@ -1,0 +1,32 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and attach release zip
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Build release zip
+        run: |
+          mkdir -p build
+          cp -r custom_components build/
+          cd build
+          zip -r "../button_router.zip" custom_components
+
+      - name: Attach zip to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: button_router.zip
+          generate_release_notes: true

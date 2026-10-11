@@ -1,0 +1,32 @@
+{
+  "title": "Button Router",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Button Router",
+        "description": "Integracja mapuje zdarzenia fizycznych przycisków (np. ESPHome: esphome.short / esphome.double / esphome.long) na akcje Home Assistant. Po dodaniu integracji w sidebarze pojawi się panel „Przyciski”, a nowe przyciski będą wykrywane automatycznie po naciśnięciu.",
+        "data": {
+          "name": "Nazwa (widoczna na liście integracji)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Integracja jest już dodana."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Button Router — ustawienia",
+        "data": {
+          "event_types": "Typy zdarzeń do nasłuchiwania",
+          "data_key": "Klucz w danych zdarzenia zawierający nazwę przycisku",
+          "extra_event_types": "Dodatkowe typy zdarzeń (oddziel przecinkami, np. esphome.quad)"
+        }
+      }
+    },
+    "error": {
+      "no_event_types": "Wybierz co najmniej jeden typ zdarzenia."
+    }
+  }
+}
