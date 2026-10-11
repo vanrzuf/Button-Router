@@ -50,6 +50,12 @@ class ButtonRouter:
         data_key = self.options.get("data_key") or DEFAULT_DATA_KEY
         name = event.data.get(data_key)
         if not isinstance(name, str) or not name:
+            _LOGGER.debug(
+                "Zdarzenie %s bez poprawnego klucza '%s' (data=%s) - pomijam",
+                event.event_type,
+                data_key,
+                event.data,
+            )
             return
 
         buttons = self.store.data.get("buttons", {})
@@ -58,7 +64,11 @@ class ButtonRouter:
         if cfg is None:
             # Auto-discovery: unknown button pressed -> remember it for the panel.
             self.store.touch_discovered(name, event.event_type)
-            _LOGGER.debug("Wykryto nowy przycisk: %s (%s)", name, event.event_type)
+            _LOGGER.info(
+                "Wykryto nowy przycisk: %s (%s) - pojawi się w panelu",
+                name,
+                event.event_type,
+            )
             return
 
         if not cfg.get("enabled", True):

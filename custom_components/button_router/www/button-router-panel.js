@@ -87,6 +87,9 @@ class ButtonRouterPanel extends HTMLElement {
     this._lastEntitiesAt = 0;
     this._showIgnored = false;
     this._tt = null;
+    this._pollTimer = null;
+    this._pollInFlight = false;
+    this._lastDiscJson = "";
     this.innerHTML = `<style>${CSS}</style><div class="loading">Ładowanie panelu…</div>`;
     this._boundClick = (e) => this._onClick(e);
     this._boundChange = (e) => this._onChange(e);
@@ -118,6 +121,8 @@ class ButtonRouterPanel extends HTMLElement {
       this._refreshEntities(true);
       this._ready = true;
       this._render();
+      this._lastDiscJson = JSON.stringify(this._discovered || {});
+      this._startPolling();
     } catch (err) {
       this.innerHTML = `<style>${CSS}</style>
         <div class="wrap">
@@ -143,6 +148,87 @@ class ButtonRouterPanel extends HTMLElement {
           : [...DEFAULT_EVENT_TYPES],
       data_key: o.data_key || "input",
     };
+  }
+
+  disconnectedCallback() {
+    this._stopPolling();
+  }
+
+  _startPolling() {
+    if (this._pollTimer) return;
+    this._pollTimer = setInterval(() => this._pollConfig(), 5000);
+  }
+
+  _stopPolling() {
+    if (this._pollTimer) {
+      clearInterval(this._pollTimer);
+      this._pollTimer = null;
+    }
+  }
+
+  async _pollConfig() {
+    // Live refresh co 5 s: nowo wykryte przyciski pojawiają się same.
+    // Nie odświeżamy gdy użytkownik ma niezapisane zmiany albo karta jest
+    // schowana — pełny render nadpisałby stan edytora.
+    if (this._dirty || this._pollInFlight || document.hidden || !this._ready) return;
+    this._pollInFlight = true;
+    try {
+      const cfg = await this._ws("button_router/get_config");
+      const newDisc = cfg.discovered || {};
+      const discJson = JSON.stringify(newDisc);
+      const o = cfg.options || {};
+      const optsChanged =
+        JSON.stringify(o.event_types) !== JSON.stringify(this._options.event_types) ||
+        (o.data_key || "input") !== this._options.data_key;
+      if (optsChanged) {
+        this._applyConfig(cfg);
+        this._lastDiscJson = discJson;
+        this._render();
+        return;
+      }
+      if (discJson !== this._lastDiscJson) {
+        const prev = this._discovered || {};
+        const added = Object.keys(newDisc).filter((n) => !prev[n]);
+        this._discovered = newDisc;
+        this._lastDiscJson = discJson;
+        if (added.length) {
+          this._toast("Wykryto nowy przycisk: " + added.join(", "));
+        }
+        this._updateDiscCard();
+      }
+    } catch (err) {
+      /* cicho — zostają ostatnie dane; retry w następnym cyklu */
+    } finally {
+      this._pollInFlight = false;
+    }
+  }
+
+  _updateDiscCard() {
+    const card = this.querySelector("#disc-card");
+    if (card) card.outerHTML = this._discCardHtml();
+  }
+
+  _discCardHtml() {
+    const disc = Object.entries(this._discovered || {});
+    const visibleDisc = disc.filter(([, e]) => this._showIgnored || !e.ignored);
+    const ignoredCount = disc.filter(([, e]) => e.ignored).length;
+    return `<div class="card" id="disc-card">
+          <h2>Nowo wykryte przyciski <span class="badge">${visibleDisc.length}</span></h2>
+          <p class="hint">Naciśnij fizyczny przycisk bez konfiguracji — pojawi się tutaj automatycznie (panel odświeża dane co 5 s). „+ Dodaj” przenosi go do mapowania poniżej.</p>
+          ${
+            visibleDisc.length
+              ? `<table>
+                  <thead><tr><th>Przycisk</th><th>Zdarzenia</th><th>Ostatnio</th><th>Akcje</th></tr></thead>
+                  <tbody>${visibleDisc.map(([name, e]) => this._discRow(name, e)).join("")}</tbody>
+                </table>`
+              : '<p class="empty">Na razie pusto — brak nieznanych przycisków.</p>'
+          }
+          <div class="row">
+            <button class="btn sm" data-act="clear-discovered">Wyczyść listę</button>
+            <label class="chk"><input type="checkbox" id="show-ignored" ${this._showIgnored ? "checked" : ""} /> pokaż ignorowane (${ignoredCount})</label>
+          </div>
+          <p class="hint">💡 Diagnostyka: jeśli naciśnięcie fizycznego przycisku nic nie dodaje — sprawdź w <b>Narzędzia deweloperskie → Zdarzenia</b>, czy zdarzenie w ogóle przychodzi (posłuchaj typu <code>esphome.short</code>) i pod jakim kluczem przesyłana jest nazwa przycisku (panel oczekuje klucza z opcji integracji). Możesz też użyć „🧪 Test zdarzenia” poniżej — to sprawdza całą ścieżkę panel → integracja.</p>
+        </div>`;
   }
 
   async _reload() {
@@ -199,9 +285,6 @@ class ButtonRouterPanel extends HTMLElement {
     this._refreshEntities(false);
     const cols = this._columns();
     const dataKey = esc(this._options.data_key);
-    const disc = Object.entries(this._discovered || {});
-    const visibleDisc = disc.filter(([, e]) => this._showIgnored || !e.ignored);
-    const ignoredCount = disc.filter(([, e]) => e.ignored).length;
 
     this.innerHTML = `<style>${CSS}</style>
       <div class="wrap">
@@ -215,22 +298,7 @@ class ButtonRouterPanel extends HTMLElement {
           </div>
         </div>
 
-        <div class="card">
-          <h2>Nowo wykryte przyciski <span class="badge">${visibleDisc.length}</span></h2>
-          <p class="hint">Naciśnij fizyczny przycisk bez konfiguracji — pojawi się tutaj automatycznie (z licznikiem naciśnięć). „+ Dodaj” przenosi go do mapowania poniżej.</p>
-          ${
-            visibleDisc.length
-              ? `<table>
-                  <thead><tr><th>Przycisk</th><th>Zdarzenia</th><th>Ostatnio</th><th>Akcje</th></tr></thead>
-                  <tbody>${visibleDisc.map(([name, e]) => this._discRow(name, e)).join("")}</tbody>
-                </table>`
-              : '<p class="empty">Na razie pusto — brak nieznanych przycisków.</p>'
-          }
-          <div class="row">
-            <button class="btn sm" data-act="clear-discovered">Wyczyść listę</button>
-            <label class="chk"><input type="checkbox" id="show-ignored" ${this._showIgnored ? "checked" : ""} /> pokaż ignorowane (${ignoredCount})</label>
-          </div>
-        </div>
+        ${this._discCardHtml()}
 
         <div class="card">
           <h2>Mapowanie: przycisk + typ kliknięcia → akcje</h2>
