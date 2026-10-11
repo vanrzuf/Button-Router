@@ -11,7 +11,15 @@ import yaml
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 
-from .const import CONF_DATA_KEY, DEFAULT_DATA_KEY, DOMAIN
+from .const import (
+    CONF_CREATE_ENTITIES,
+    CONF_DATA_KEY,
+    CONF_EVENT_TYPES,
+    CONFIG_EVENT,
+    DEFAULT_DATA_KEY,
+    DOMAIN,
+)
+from .router import render_value
 from .store import normalize_buttons
 
 _LOGGER = logging.getLogger(__name__)
@@ -64,10 +72,18 @@ def _get_runtime(hass: HomeAssistant) -> dict[str, Any] | None:
     return None
 
 
+def _fire_config_changed(hass: HomeAssistant) -> None:
+    """Tell every open panel that the stored configuration changed."""
+    try:
+        hass.bus.async_fire(CONFIG_EVENT, {})
+    except Exception:  # pragma: no cover - never block the WS command
+        pass
+
+
 @websocket_api.websocket_command({vol.Required("type"): "button_router/get_config"})
 @callback
 def ws_get_config(hass, connection, msg):
-    """Return current mapping, discovered buttons and options."""
+    """Return current mapping, discovered buttons, options, stats and log."""
     runtime = _get_runtime(hass)
     if runtime is None:
         connection.send_error(msg["id"], "not_loaded", "Integracja nie jest aktywna.")
@@ -79,6 +95,8 @@ def ws_get_config(hass, connection, msg):
             "buttons": store.data["buttons"],
             "discovered": store.data["discovered"],
             "options": runtime["options"],
+            "stats": store.data.get("stats", {}),
+            "recent": store.data.get("recent", []),
         },
     )
 
@@ -100,6 +118,10 @@ def ws_save_config(hass, connection, msg):
     store = runtime["store"]
     count = store.set_buttons(msg["buttons"])
     _LOGGER.info("Panel Button Router: zapisano %d przycisków", count)
+    sync = runtime.get("sync_event_entities")
+    if sync is not None:
+        sync()
+    _fire_config_changed(hass)
     connection.send_result(
         msg["id"], {"saved": count, "discovered": store.data["discovered"]}
     )
@@ -129,6 +151,7 @@ def ws_clear_discovered(hass, connection, msg):
             store.remove_discovered(name)
     else:
         store.remove_discovered(None)
+    _fire_config_changed(hass)
     connection.send_result(msg["id"], {"discovered": store.data["discovered"]})
 
 
@@ -150,6 +173,99 @@ async def ws_import_yaml(hass, connection, msg):
         connection.send_error(msg["id"], "import_failed", f"Nie udało się sparsować: {err}")
         return
     connection.send_result(msg["id"], {"buttons": buttons, "count": len(buttons)})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "button_router/set_options",
+        vol.Optional("event_types"): [str],
+        vol.Optional("data_key"): str,
+        vol.Optional("create_event_entities"): bool,
+    }
+)
+@callback
+def ws_set_options(hass, connection, msg):
+    """Update integration options from the panel (triggers entry reload)."""
+    runtime = _get_runtime(hass)
+    if runtime is None:
+        connection.send_error(msg["id"], "not_loaded", "Integracja nie jest aktywna.")
+        return
+    entry = runtime["entry"]
+    new_options: dict[str, Any] = dict(entry.options)
+    if "event_types" in msg:
+        types = [str(t).strip() for t in msg["event_types"] if str(t).strip()]
+        if not types:
+            connection.send_error(
+                msg["id"], "no_event_types", "Wybierz co najmniej jeden typ zdarzenia."
+            )
+            return
+        new_options[CONF_EVENT_TYPES] = types
+    if "data_key" in msg:
+        data_key = str(msg["data_key"]).strip()
+        if not data_key:
+            connection.send_error(
+                msg["id"], "bad_data_key", "Klucz danych nie może być pusty."
+            )
+            return
+        new_options[CONF_DATA_KEY] = data_key
+    if "create_event_entities" in msg:
+        new_options[CONF_CREATE_ENTITIES] = bool(msg["create_event_entities"])
+    hass.config_entries.async_update_entry(entry, options=new_options)
+    _LOGGER.info(
+        "Panel Button Router: zmieniono opcje (encje zdarzeń: %s)",
+        bool(new_options.get(CONF_CREATE_ENTITIES)),
+    )
+    _fire_config_changed(hass)
+    connection.send_result(msg["id"], {"options": runtime["options"]})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "button_router/run_action",
+        vol.Required("service"): str,
+        vol.Optional("entity_id"): str,
+        vol.Optional("data"): dict,
+    }
+)
+@callback
+def ws_run_action(hass, connection, msg):
+    """Run a single action from the editor (▶ button) without saving it."""
+    service = msg["service"].strip()
+    if "." not in service:
+        connection.send_error(
+            msg["id"], "bad_service", "Usługa musi mieć postać domena.usługa."
+        )
+        return
+    domain, _, svc_name = service.partition(".")
+    service_data: dict[str, Any] = {}
+    entity_id = str(msg.get("entity_id") or "").strip()
+    if entity_id:
+        service_data["entity_id"] = entity_id
+    data = msg.get("data")
+    if isinstance(data, dict) and data:
+        service_data.update(render_value(hass, data))
+    hass.async_create_task(
+        hass.services.async_call(domain, svc_name, service_data, blocking=False)
+    )
+    connection.send_result(msg["id"], {"called": service, "service_data": service_data})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): "button_router/clear_stats"}
+)
+@callback
+def ws_clear_stats(hass, connection, msg):
+    """Reset per-button usage stats and the recent-events log."""
+    runtime = _get_runtime(hass)
+    if runtime is None:
+        connection.send_error(msg["id"], "not_loaded", "Integracja nie jest aktywna.")
+        return
+    runtime["store"].clear_stats()
+    _fire_config_changed(hass)
+    connection.send_result(msg["id"], {"cleared": True})
 
 
 @websocket_api.require_admin
@@ -192,3 +308,6 @@ def async_register_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_clear_discovered)
     websocket_api.async_register_command(hass, ws_import_yaml)
     websocket_api.async_register_command(hass, ws_test_event)
+    websocket_api.async_register_command(hass, ws_set_options)
+    websocket_api.async_register_command(hass, ws_run_action)
+    websocket_api.async_register_command(hass, ws_clear_stats)

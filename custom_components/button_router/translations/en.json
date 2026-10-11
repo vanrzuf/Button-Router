@@ -21,7 +21,8 @@
         "data": {
           "event_types": "Event types to listen for",
           "data_key": "Event data key holding the button name",
-          "extra_event_types": "Extra event types (comma separated, e.g. esphome.quad)"
+          "extra_event_types": "Extra event types (comma separated, e.g. esphome.quad)",
+          "create_event_entities": "Create event entities (event.*) for mapped buttons"
         }
       }
     },

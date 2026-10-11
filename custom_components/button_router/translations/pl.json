@@ -21,7 +21,8 @@
         "data": {
           "event_types": "Typy zdarzeń do nasłuchiwania",
           "data_key": "Klucz w danych zdarzenia zawierający nazwę przycisku",
-          "extra_event_types": "Dodatkowe typy zdarzeń (oddziel przecinkami, np. esphome.quad)"
+          "extra_event_types": "Dodatkowe typy zdarzeń (oddziel przecinkami, np. esphome.quad)",
+          "create_event_entities": "Twórz encje zdarzeń (event.*) dla zmapowanych przycisków"
         }
       }
     },

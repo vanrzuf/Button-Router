@@ -10,10 +10,12 @@ from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
 
 from .const import (
+    CONF_CREATE_ENTITIES,
     CONF_DATA_KEY,
     CONF_EVENT_TYPES,
     CONF_EXTRA_TYPES,
     CONF_NAME,
+    DEFAULT_CREATE_ENTITIES,
     DEFAULT_DATA_KEY,
     DEFAULT_EVENT_TYPES,
     DEFAULT_NAME,
@@ -64,6 +66,9 @@ class ButtonRouterOptionsFlow(config_entries.OptionsFlow):
             self._entry.options.get(CONF_EVENT_TYPES) or DEFAULT_EVENT_TYPES
         )
         current_key = self._entry.options.get(CONF_DATA_KEY) or DEFAULT_DATA_KEY
+        current_entities = bool(
+            self._entry.options.get(CONF_CREATE_ENTITIES, DEFAULT_CREATE_ENTITIES)
+        )
 
         if user_input is not None:
             types = list(user_input.get(CONF_EVENT_TYPES) or [])
@@ -81,7 +86,13 @@ class ButtonRouterOptionsFlow(config_entries.OptionsFlow):
                 )
                 return self.async_create_entry(
                     title=DEFAULT_NAME,
-                    data={CONF_EVENT_TYPES: types, CONF_DATA_KEY: data_key},
+                    data={
+                        CONF_EVENT_TYPES: types,
+                        CONF_DATA_KEY: data_key,
+                        CONF_CREATE_ENTITIES: bool(
+                            user_input.get(CONF_CREATE_ENTITIES, False)
+                        ),
+                    },
                 )
 
         schema = vol.Schema(
@@ -91,6 +102,9 @@ class ButtonRouterOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Required(CONF_DATA_KEY, default=current_key): str,
                 vol.Optional(CONF_EXTRA_TYPES, default=""): str,
+                vol.Required(
+                    CONF_CREATE_ENTITIES, description={"suggested_value": current_entities}
+                ): cv.boolean,
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

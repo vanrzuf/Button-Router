@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
@@ -31,8 +33,10 @@ except ImportError:  # pragma: no cover - Home Assistant < 2024.3
 
 from . import websocket as button_router_ws
 from .const import (
+    CONF_CREATE_ENTITIES,
     CONF_DATA_KEY,
     CONF_EVENT_TYPES,
+    DEFAULT_CREATE_ENTITIES,
     DEFAULT_DATA_KEY,
     DEFAULT_EVENT_TYPES,
     DOMAIN,
@@ -47,6 +51,8 @@ from .store import ButtonRouterStore
 _LOGGER = logging.getLogger(__name__)
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+PLATFORMS: list[Platform] = [Platform.EVENT]
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -64,24 +70,45 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             entry.options.get(CONF_EVENT_TYPES) or DEFAULT_EVENT_TYPES
         ),
         CONF_DATA_KEY: entry.options.get(CONF_DATA_KEY) or DEFAULT_DATA_KEY,
+        CONF_CREATE_ENTITIES: bool(
+            entry.options.get(CONF_CREATE_ENTITIES, DEFAULT_CREATE_ENTITIES)
+        ),
     }
 
-    router = ButtonRouter(hass, store, options)
+    runtime: dict[str, Any] = {}
+
+    @callback
+    def _async_trigger_event_entity(name: str, event_type: str) -> None:
+        """Fire the event.* entity of one mapped button (option-dependent)."""
+        entity = runtime.get("event_entities", {}).get(name)
+        if entity is not None:
+            entity.async_handle_event(event_type)
+
+    router = ButtonRouter(hass, store, options, runtime)
     router.async_setup_listeners()
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-        "store": store,
-        "router": router,
-        "options": options,
-    }
+    runtime.update(
+        {
+            "entry": entry,
+            "store": store,
+            "router": router,
+            "options": options,
+            "event_entities": {},
+            "async_trigger_event_entity": _async_trigger_event_entity,
+        }
+    )
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
 
     button_router_ws.async_register_commands(hass)
     await _async_register_panel(hass)
 
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     _LOGGER.info(
-        "Button Router aktywny (nasłuchiwane zdarzenia: %s)",
+        "Button Router aktywny (nasłuchiwane zdarzenia: %s; encje zdarzeń: %s)",
         ", ".join(options[CONF_EVENT_TYPES]),
+        "tak" if options[CONF_CREATE_ENTITIES] else "nie",
     )
     return True
 
@@ -142,9 +169,16 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
     runtime = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
     if runtime:
         runtime["router"].async_shutdown()
+        runtime["event_entities"].clear()
+        try:
+            await runtime["store"].async_flush()
+        except Exception:  # pragma: no cover - flush nie może zablokować unload
+            _LOGGER.warning("Button Router: nie udało się zapisać stanu na dysk")
 
     if async_remove_panel is not None:  # pragma: no branch
         try:

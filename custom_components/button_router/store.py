@@ -9,7 +9,7 @@ from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import SAVE_DEBOUNCE_SECONDS, STORAGE_KEY, STORAGE_VERSION
+from .const import RECENT_LIMIT, SAVE_DEBOUNCE_SECONDS, STORAGE_KEY, STORAGE_VERSION
 
 
 def normalize_buttons(raw: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
@@ -44,9 +44,12 @@ def normalize_buttons(raw: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
                 if "." not in service:
                     # Skip placeholders like ["", ""] and malformed rows.
                     continue
-                action: dict[str, str] = {"service": service}
+                action: dict[str, Any] = {"service": service}
                 if entity_id:
                     action["entity_id"] = entity_id
+                data = entry.get("data")
+                if isinstance(data, dict) and data:
+                    action["data"] = dict(data)
                 cleaned.append(action)
             if cleaned:
                 actions[str(event_type)] = cleaned
@@ -63,7 +66,12 @@ class ButtonRouterStore:
     def __init__(self, hass: HomeAssistant) -> None:
         self._hass = hass
         self._store: Store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
-        self._data: dict[str, dict[str, Any]] = {"buttons": {}, "discovered": {}}
+        self._data: dict[str, Any] = {
+            "buttons": {},
+            "discovered": {},
+            "stats": {},
+            "recent": [],
+        }
         self._unsub_save: Callable[[], None] | None = None
         self._save_lock = asyncio.Lock()
 
@@ -72,13 +80,18 @@ class ButtonRouterStore:
         restored = await self._store.async_load()
         if isinstance(restored, dict):
             discovered = restored.get("discovered")
+            stats = restored.get("stats")
+            recent = restored.get("recent")
             self._data = {
                 "buttons": normalize_buttons(restored.get("buttons")),
                 "discovered": discovered if isinstance(discovered, dict) else {},
+                "stats": stats if isinstance(stats, dict) else {},
+                "recent": recent if isinstance(recent, list) else [],
             }
+            self._data["recent"] = self._data["recent"][:RECENT_LIMIT]
 
     @property
-    def data(self) -> dict[str, dict[str, Any]]:
+    def data(self) -> dict[str, Any]:
         """Return the current in-memory data."""
         return self._data
 
@@ -88,8 +101,48 @@ class ButtonRouterStore:
         for name in list(self._data["discovered"]):
             if name in self._data["buttons"]:
                 self._data["discovered"].pop(name)
+        # Prune usage stats of removed buttons.
+        self._data["stats"] = {
+            name: stats
+            for name, stats in self._data["stats"].items()
+            if name in self._data["buttons"]
+        }
         self.schedule_save()
         return len(self._data["buttons"])
+
+    @callback
+    def record_event(
+        self, name: str, event_type: str, executed: int, enabled: bool = True
+    ) -> dict[str, Any]:
+        """Record one handled event: update per-button stats and recent log."""
+        now = dt_util.utcnow().isoformat()
+        stats: dict[str, Any] = self._data["stats"].setdefault(
+            name, {"count": 0, "by_type": {}, "last_fired": "", "last_type": ""}
+        )
+        stats["count"] = int(stats.get("count", 0)) + 1
+        by_type: dict[str, int] = stats.setdefault("by_type", {})
+        by_type[event_type] = int(by_type.get(event_type, 0)) + 1
+        stats["last_fired"] = now
+        stats["last_type"] = event_type
+        entry = {
+            "time": now,
+            "button": name,
+            "event_type": event_type,
+            "executed": int(executed),
+            "enabled": bool(enabled),
+        }
+        recent: list[dict[str, Any]] = self._data["recent"]
+        recent.insert(0, entry)
+        del recent[RECENT_LIMIT:]
+        self.schedule_save()
+        return entry
+
+    @callback
+    def clear_stats(self) -> None:
+        """Reset usage statistics and the recent-events log."""
+        self._data["stats"] = {}
+        self._data["recent"] = []
+        self.schedule_save()
 
     @callback
     def touch_discovered(self, name: str, event_type: str) -> None:
@@ -109,6 +162,13 @@ class ButtonRouterStore:
         entry["count"] = int(entry.get("count", 0)) + 1
         events = entry.setdefault("events", {})
         events[event_type] = int(events.get(event_type, 0)) + 1
+        # Keep the discovered list from growing without bounds.
+        if len(self._data["discovered"]) > 200:
+            oldest = min(
+                self._data["discovered"],
+                key=lambda n: self._data["discovered"][n].get("last_seen", ""),
+            )
+            self._data["discovered"].pop(oldest, None)
         self.schedule_save()
 
     @callback
