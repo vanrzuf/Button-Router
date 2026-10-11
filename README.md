@@ -1,9 +1,9 @@
 # Button Router — przyciski fizyczne z panelem w Home Assistant
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
-[![Wydanie](https://img.shields.io/github/v/release/twoj-login/button-router)](https://github.com/twoj-login/button-router/releases)
-[![Walidacja](https://github.com/twoj-login/button-router/actions/workflows/validate.yaml/badge.svg)](https://github.com/twoj-login/button-router/actions/workflows/validate.yaml)
-![Licencja](https://img.shields.io/github/license/twoj-login/button-router)
+[![Wydanie](https://img.shields.io/github/v/release/vanrzuf/Button-Router)](https://github.com/vanrzuf/Button-Router/releases)
+[![Walidacja](https://github.com/vanrzuf/Button-Router/actions/workflows/validate.yaml/badge.svg)](https://github.com/vanrzuf/Button-Router/actions/workflows/validate.yaml)
+![Licencja](https://img.shields.io/github/license/vanrzuf/Button-Router)
 
 Custom integration dla **Home Assistant**, która zastępuje ręcznie utrzymywaną
 automatyzację mapującą zdarzenia fizycznych przycisków (np. ESPHome:
@@ -33,7 +33,7 @@ Repozytorium jest gotowe pod HACS (struktura `custom_components/button_router`,
 `hacs.json`, walidacja hassfest/HACS w GitHub Actions).
 
 **Jeśli repozytorium jest już opublikowane na GitHubie** (np.
-`https://github.com/twoj-login/button-router`):
+`https://github.com/vanrzuf/Button-Router`):
 
 1. **HACS → ⋮ (menu) → Custom repositories**,
 2. wklej URL repozytorium, kategoria: **Integration**,
@@ -52,15 +52,15 @@ możesz też pobrać i rozpakować do `config/` przy instalacji ręcznej).
 cd button_router
 git init && git add . && git commit -m "Button Router 0.1.0"
 git branch -M main
-git remote add origin https://github.com/twoj-login/button-router.git
+git remote add origin https://github.com/vanrzuf/Button-Router.git
 git push -u origin main
 # wydanie v0.1.0 — workflow sam zbuduje i dołączy button_router.zip:
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
-> Podmień `twoj-login` na swoją nazwę użytkownika GitHub (także w
-> `manifest.json` — pola `documentation` i `issue_tracker` — oraz w badge'ach
-> i `LICENSE`).
+> Repozytorium jest już skonfigurowane pod konto **vanrzuf** — jeśli zmienisz
+> nazwę użytkownika lub repo na GitHubie, podmień je także w `manifest.json`
+> (pola `documentation` i `issue_tracker`), w badge'ach powyżej oraz w `LICENSE`.
 
 Opcjonalnie: dodaj wpis w repozytorium
 [brands](https://github.com/hacs/brands/pulls) (ikona w HACS i w HA) — bez

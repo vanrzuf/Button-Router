@@ -4,10 +4,10 @@
   "codeowners": ["@vanrzuf"],
   "config_flow": true,
   "dependencies": ["http", "frontend", "websocket_api"],
-  "documentation": "https://github.com/vanrzuf/button-router",
+  "documentation": "https://github.com/vanrzuf/Button-Router",
   "integration_type": "hub",
   "iot_class": "local_push",
-  "issue_tracker": "https://github.com/vanrzuf/button-router/issues",
+  "issue_tracker": "https://github.com/vanrzuf/Button-Router/issues",
   "requirements": [],
   "version": "0.1.0",
   "after_dependencies": ["esphome"]
